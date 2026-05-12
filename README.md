@@ -1,36 +1,104 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Studyform
 
-## Getting Started
+> Reading that becomes recall.
 
-First, run the development server:
+Studyform turns PDFs and web pages into high-quality spaced-repetition flashcards using AI. The focus is on card quality — every card is grounded in the source text, not generated from thin air.
+
+**Live demo:** https://studyform.vercel.app
+
+---
+
+## Features
+
+- Upload a PDF or paste a URL
+- Extracts and chunks the source text before generation — this is the quality lever
+- Generates 2–4 flashcards per chunk using Llama 3.3 70B via Groq
+- Reviews cards using the SM-2 spaced repetition algorithm
+- Magic link authentication — no passwords
+
+## Tech Stack
+
+| Layer | Choice |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Language | TypeScript |
+| Styling | Tailwind CSS |
+| Auth + Database | Supabase |
+| AI | Groq — `llama-3.3-70b-versatile` |
+| PDF parsing | unpdf |
+| Spaced repetition | SM-2 (custom implementation) |
+| Deployment | Vercel |
+
+## Architecture
+
+```
+User uploads PDF or URL
+  ↓
+Text extracted server-side (unpdf / cheerio)
+  ↓
+Text split into semantic chunks (lib/chunker.ts)
+  ↓
+Each chunk → Groq LLM → 2–4 flashcards (lib/prompts.ts)
+  ↓
+Cards stored in Supabase, linked to source chunk
+  ↓
+SM-2 algorithm schedules reviews (lib/sm2.ts)
+```
+
+Chunking before generation is the core architectural decision. A card generated from a tightly-scoped passage is grounded. A card generated from a full document is a hallucination risk.
+
+## Database Schema
+
+```
+documents    — one per upload, owned by a user
+chunks       — text segments extracted from a document
+cards        — front/back pairs, each linked to a chunk
+card_reviews — SM-2 state per card per user (ease_factor, interval, due_date)
+```
+
+Row Level Security is enabled on all tables. Users can only access their own data.
+
+## Running Locally
+
+```bash
+git clone https://github.com/albertkupperdev/studyform
+cd studyform
+npm install
+cp .env.example .env.local
+```
+
+Fill in `.env.local`:
+
+```
+NEXT_PUBLIC_SUPABASE_URL=
+NEXT_PUBLIC_SUPABASE_ANON_KEY=
+GROQ_API_KEY=
+```
+
+Run the SQL in `supabase/schema.sql` in your Supabase project's SQL editor, then:
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Project Structure
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```
+app/
+  api/
+    documents/upload/   — PDF ingestion
+    documents/url/      — URL ingestion
+    cards/generate/     — flashcard generation
+    review/[cardId]/    — submit SM-2 review
+  dashboard/            — deck list
+  deck/[id]/            — deck detail + card list
+  review/[id]/          — review session
+  login/                — magic link sign in
+lib/
+  ai.ts                 — Groq client
+  chunker.ts            — text → chunks
+  extract.ts            — PDF and URL text extraction
+  prompts.ts            — card generation prompt
+  sm2.ts                — SM-2 algorithm
+  supabase/             — browser and server Supabase clients
+```
